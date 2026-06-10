@@ -1,0 +1,6 @@
+{
+  "name": "Ewe Multilingual Translator",
+  "description": "Système de traduction automatique et vocale Français, Anglais et Ewe avec gestion de corpus et évaluation NLP.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

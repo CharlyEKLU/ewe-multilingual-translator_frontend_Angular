@@ -1,0 +1,136 @@
+<div class="splash-screen" [class.hidden]="!isLoadingApp">
+  <dotlottie-wc src="https://lottie.host/cc2d2384-1982-4be5-86fa-a43bfaff4a06/ccKLwqZQRL.lottie" style="width: 300px;height: 300px" autoplay loop></dotlottie-wc>
+</div>
+
+<div class="app" id="ewe-translator-app-root" [class.app-hidden]="isLoadingApp">
+  <header id="main-app-header" style="justify-content: center; align-items: center; height: auto; display: flex;">
+    <div class="header-inner">
+      <div class="logo-group">
+        <div class="logo-mark">
+          <mat-icon style="color: white;">translate</mat-icon>
+        </div>
+        <div class="logo-text">
+          <h1 style="margin: 0; padding: 0; color: rgb(0, 0, 0);">
+            Traducteur Multilingue Ewe
+          </h1> 
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="leftPanel" class="panel active">
+      <app-translation-hub (translationSaved)="addTranslationToHistory($event)"></app-translation-hub>
+    </div>
+
+    <aside id="rightPanel" class="sidebar">
+      <div class="sidebar-card" id="history-sidebar" [style.position]="isHistoryExpanded ? 'static' : 'sticky'" [style.top.px]="isHistoryExpanded ? null : 120">
+        
+        <!-- DEFAULT SIDEBAR VIEW -->
+        <ng-container *ngIf="!isHistoryExpanded">
+          <div class="sidebar-title">
+            <mat-icon style="color: var(--primary);">history</mat-icon>
+            Historique
+            <div style="margin-left: auto; display: flex; gap: 12px;">
+              <button type="button" (click)="expandHistory()" class="sidebar-clear" style="margin-left: 0; color: var(--primary);">Voir tout</button>
+              <button *ngIf="history.length > 0" type="button" (click)="clearHistory()" class="sidebar-clear" style="margin-left: 0;">Effacer</button>
+            </div>
+          </div>
+
+          <div class="history-list" style="max-height: 500px;">
+            <div *ngFor="let item of history | slice:0:5" class="history-item">
+              <div class="history-item-header">
+                <div class="history-time">{{ item.date }} à {{ item.time }}</div>
+                <button class="delete-icon-btn" (click)="deleteItem(item.id)">
+                  <mat-icon style="font-size: 16px; width: 16px; height: 16px;">close</mat-icon>
+                </button>
+              </div>
+              <div class="history-fr"><span>{{ item.sourceLang | uppercase }}:</span> {{ item.sourceText }}</div>
+              <div class="history-ee"><span>{{ item.targetLang | uppercase }}:</span> {{ item.targetText }}</div>
+            </div>
+            
+            
+            <div *ngIf="history.length === 0" class="history-empty">Aucune traduction dans cette session.</div>
+          </div>
+        </ng-container>
+
+        <!-- FULL DATATABLE VIEW -->
+        <ng-container *ngIf="isHistoryExpanded">
+          <div class="datatable-container">
+            <div class="datatable-header">
+              <div style="display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 800; color: var(--ink);">
+                <mat-icon style="color: var(--primary);">history</mat-icon>
+                Historique Complet
+              </div>
+              
+              <div style="display: flex; gap: 16px;">
+                <div class="search-bar">
+                  <mat-icon style="color: var(--border);">search</mat-icon>
+                  <input type="text" [(ngModel)]="searchQuery" placeholder="Rechercher une traduction...">
+                </div>
+                
+                <button *ngIf="selectedItems.size > 0" mat-flat-button color="warn" (click)="deleteSelected()">
+                  Supprimer ({{ selectedItems.size }})
+                </button>
+              </div>
+            </div>
+
+            <div style="overflow-x: auto; background: var(--bg); border-radius: var(--r); border: 1px solid var(--border-light);">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th style="width: 40px; text-align: center;">
+                      <input type="checkbox" [checked]="isAllSelected()" (change)="toggleAll($event)">
+                    </th>
+                    <th (click)="sortData('timestamp')">Date <mat-icon style="font-size: 12px; height: 12px; width: 12px; vertical-align: middle;" *ngIf="sortColumn === 'timestamp'">{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon></th>
+                    <th>Heure</th>
+                    <th (click)="sortData('sourceLang')">Source <mat-icon style="font-size: 12px; height: 12px; width: 12px; vertical-align: middle;" *ngIf="sortColumn === 'sourceLang'">{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon></th>
+                    <th (click)="sortData('sourceText')">Contenu <mat-icon style="font-size: 12px; height: 12px; width: 12px; vertical-align: middle;" *ngIf="sortColumn === 'sourceText'">{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon></th>
+                    <th (click)="sortData('targetLang')">Cible <mat-icon style="font-size: 12px; height: 12px; width: 12px; vertical-align: middle;" *ngIf="sortColumn === 'targetLang'">{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon></th>
+                    <th (click)="sortData('targetText')">Traduction <mat-icon style="font-size: 12px; height: 12px; width: 12px; vertical-align: middle;" *ngIf="sortColumn === 'targetText'">{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon></th>
+                    <th style="width: 60px; text-align: center;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of filteredHistory">
+                    <td style="text-align: center;">
+                      <input type="checkbox" [checked]="selectedItems.has(item.id)" (change)="toggleSelection(item.id)">
+                    </td>
+                    <td style="font-family: var(--ff-mono); font-size: 12px; color: var(--ink-light); white-space: nowrap;">{{ item.date }}</td>
+                    <td style="font-family: var(--ff-mono); font-size: 12px; color: var(--ink-light); white-space: nowrap;">{{ item.time }}</td>
+                    <td style="font-weight: 700; color: var(--border);">{{ item.sourceLang | uppercase }}</td>
+                    <td>{{ item.sourceText }}</td>
+                    <td style="font-weight: 700; color: var(--primary);">{{ item.targetLang | uppercase }}</td>
+                    <td style="font-weight: 600; color: var(--ink);">{{ item.targetText }}</td>
+                    <td style="text-align: center;">
+                      <button class="delete-icon-btn" (click)="deleteItem(item.id)">
+                        <mat-icon>delete_outline</mat-icon>
+                      </button>
+                    </td>
+                  </tr>
+                  <tr *ngIf="filteredHistory.length === 0">
+                    <td colspan="5" style="text-align: center; padding: 40px; color: var(--ink-light); font-style: italic;">
+                      Aucun résultat trouvé.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </ng-container>
+
+      </div>
+    </aside>
+  </main>
+  
+  <div class="fab-container">
+    <button class="restore-fab" (click)="collapseHistory()" matTooltip="Retour au traducteur">
+      <mat-icon>translate</mat-icon>
+    </button>
+  </div>
+
+  <footer id="app-footer">
+    <div class="footer-text">© 2026 Master 1 IA-BD EPL - Université de Lomé, Togo.</div>
+    <div class="footer-sub">Machine Learning, NLP pour les Langues Nationales.</div>
+  </footer>
+</div>
