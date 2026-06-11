@@ -7,10 +7,9 @@ import { MatIconModule } from "@angular/material/icon";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { TranslationResponse } from "../types";
 import { DotRevealComponent } from "./dot-reveal.component";
+import { LangCode, TranslationService } from "./translation.service";
 
 declare var anime: any;
-
-type LangCode = "fr" | "en" | "ee";
 
 const LANGUAGES: Record<LangCode, { name: string; code: LangCode; flag: string }> = {
   fr: { name: "Français", code: "fr", flag: "🇫🇷" },
@@ -48,8 +47,12 @@ export class TranslationHubComponent {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
   private recordingTimer: ReturnType<typeof setInterval> | null = null;
+  private translationRequestId = 0;
 
-  constructor(private readonly http: HttpClient) {}
+  constructor(
+    private readonly http: HttpClient,
+    private readonly translationService: TranslationService,
+  ) {}
 
   getOtherLanguages(currentLang: LangCode): LangCode[] {
     return this.langKeys.filter((lang) => lang !== currentLang);
@@ -192,24 +195,35 @@ export class TranslationHubComponent {
     clearTimeout(this.typingTimeout);
     this.typingTimeout = setTimeout(() => {
       this.translate();
-    }, 120); // Live translation as requested
+    }, 1200); // Live translation as requested
   }
 
   translate(overrideText?: string): void {
     const textToTranslate = overrideText ?? this.text;
     if (!textToTranslate.trim()) {
       this.result = null;
+      this.error = null;
+      this.isLoading = false;
       return;
     }
 
-    // Données fictives : traduction inversée instantanée
-    this.result = {
-      translation: textToTranslate.split("").reverse().join(""),
-      phonetics: "",
-      explanation: "",
-      wordAlignments: [],
-      grammaticalPoints: []
-    };
+    const requestId = ++this.translationRequestId;
+    this.isLoading = true;
+    this.error = null;
+
+    this.translationService.translate(textToTranslate, this.sourceLang, this.targetLang).subscribe({
+      next: (data) => {
+        if (requestId !== this.translationRequestId) return;
+        this.result = data;
+        this.isLoading = false;
+      },
+      error: (err) => {
+        if (requestId !== this.translationRequestId) return;
+        this.result = null;
+        this.error = err?.error?.error || "Erreur de connexion lors de la traduction.";
+        this.isLoading = false;
+      },
+    });
   }
 
   saveToHistory(): void {

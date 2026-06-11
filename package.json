@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "ng serve --host 0.0.0.0 --port 4200 --proxy-config proxy.conf.json",
-    "api": "tsx server.ts",
+    "api": "set API_ONLY=true&& set PORT=3000&& tsx server.ts",
     "build": "ng build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
+    "start": "set NODE_ENV=production&& set PORT=4200&& node dist/server.cjs",
+    "single": "npm run build && npm run start",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

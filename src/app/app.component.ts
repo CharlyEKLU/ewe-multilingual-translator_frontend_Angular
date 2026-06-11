@@ -10,6 +10,7 @@ import { FormsModule } from "@angular/forms";
 declare var anime: any;
 
 type HistoryItem = { id: string; sourceLang: string; targetLang: string; sourceText: string; targetText: string; date: string; time: string; timestamp: string };
+const HISTORY_STORAGE_KEY = "ewe-translator-history";
 
 @Component({
   selector: "app-root",
@@ -22,6 +23,7 @@ export class AppComponent implements OnInit {
   isLoadingApp = true;
 
   ngOnInit(): void {
+    this.loadHistoryFromStorage();
     setTimeout(() => {
       this.isLoadingApp = false;
     }, 2500); // Animation duration
@@ -56,7 +58,7 @@ export class AppComponent implements OnInit {
   selectedItems = new Set<string>();
 
   get filteredHistory(): HistoryItem[] {
-    let result = this.history;
+    let result = [...this.history];
 
     if (this.searchQuery) {
       const q = this.searchQuery.toLowerCase();
@@ -91,21 +93,25 @@ export class AppComponent implements OnInit {
       time: now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
       timestamp: now.toISOString()
     }, ...this.history];
+    this.persistHistory();
   }
 
   deleteItem(id: string): void {
     this.history = this.history.filter(h => h.id !== id);
     this.selectedItems.delete(id);
+    this.persistHistory();
   }
 
   deleteSelected(): void {
     this.history = this.history.filter(h => !this.selectedItems.has(h.id));
     this.selectedItems.clear();
+    this.persistHistory();
   }
 
   clearHistory(): void {
     this.history = [];
     this.selectedItems.clear();
+    this.persistHistory();
   }
 
   toggleSelection(id: string): void {
@@ -136,6 +142,39 @@ export class AppComponent implements OnInit {
       this.sortColumn = column;
       this.sortDirection = "asc";
     }
+  }
+
+  private loadHistoryFromStorage(): void {
+    const storedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!storedHistory) return;
+
+    try {
+      const parsedHistory = JSON.parse(storedHistory);
+      if (Array.isArray(parsedHistory) && parsedHistory.every((item) => this.isHistoryItem(item))) {
+        this.history = parsedHistory;
+      }
+    } catch {
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+    }
+  }
+
+  private persistHistory(): void {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(this.history));
+  }
+
+  private isHistoryItem(item: unknown): item is HistoryItem {
+    if (!item || typeof item !== "object") return false;
+    const candidate = item as Record<keyof HistoryItem, unknown>;
+    return (
+      typeof candidate.id === "string" &&
+      typeof candidate.sourceLang === "string" &&
+      typeof candidate.targetLang === "string" &&
+      typeof candidate.sourceText === "string" &&
+      typeof candidate.targetText === "string" &&
+      typeof candidate.date === "string" &&
+      typeof candidate.time === "string" &&
+      typeof candidate.timestamp === "string"
+    );
   }
 
   expandHistory(): void {
