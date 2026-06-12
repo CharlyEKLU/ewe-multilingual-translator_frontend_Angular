@@ -1,7 +1,8 @@
 import { CommonModule } from "@angular/common";
 import { HttpClient } from "@angular/common/http";
-import { Component, EventEmitter, Output } from "@angular/core";
+import { Component, EventEmitter, OnDestroy, Output } from "@angular/core";
 import { FormsModule } from "@angular/forms";
+import { Subscription } from "rxjs";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTooltipModule } from "@angular/material/tooltip";
@@ -23,7 +24,7 @@ const LANGUAGES: Record<LangCode, { name: string; code: LangCode; flag: string }
   imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatTooltipModule, DotRevealComponent],
   templateUrl: "./translation-hub.component.html",
 })
-export class TranslationHubComponent {
+export class TranslationHubComponent implements OnDestroy {
   @Output() translationSaved = new EventEmitter<{ sourceLang: string; targetLang: string; sourceText: string; targetText: string }>();
 
   readonly languages = LANGUAGES;
@@ -40,19 +41,24 @@ export class TranslationHubComponent {
   isRecording = false;
   recordingSeconds = 0;
   isPlayingAudio = false;
-
-  inputMode: "text" | "file" = "text";
   private typingTimeout: any;
 
-  private mediaRecorder: MediaRecorder | null = null;
-  private audioChunks: Blob[] = [];
+  private baseText = "";
+  private recognition: any = null;
   private recordingTimer: ReturnType<typeof setInterval> | null = null;
   private translationRequestId = 0;
+  private currentTranslationSub?: Subscription;
 
   constructor(
     private readonly http: HttpClient,
     private readonly translationService: TranslationService,
-  ) {}
+  ) { }
+
+  ngOnDestroy(): void {
+    if (this.currentTranslationSub) {
+      this.currentTranslationSub.unsubscribe();
+    }
+  }
 
   getOtherLanguages(currentLang: LangCode): LangCode[] {
     return this.langKeys.filter((lang) => lang !== currentLang);
@@ -65,9 +71,9 @@ export class TranslationHubComponent {
       const currentActive = document.querySelector('.language-side.source .lang-btn.active') as HTMLElement;
       const targetBtn = event.currentTarget as HTMLElement;
       const label = document.querySelector('.language-side.source .lang-name') as HTMLElement;
-      
+
       this.visualSourceLang = null; // Retire le style actif immédiatement
-      
+
       this.playPremiumAnimation(currentActive, targetBtn, label, LANGUAGES[lang].name, () => {
         this.visualSourceLang = lang; // Applique le style rouge uniquement quand le point atterrit
       });
@@ -82,6 +88,9 @@ export class TranslationHubComponent {
     } else {
       this.sourceLang = lang;
       this.result = null;
+      if (this.text.trim()) {
+        this.translate();
+      }
     }
   }
 
@@ -92,9 +101,9 @@ export class TranslationHubComponent {
       const currentActive = document.querySelector('.language-side.target .lang-btn.active') as HTMLElement;
       const targetBtn = event.currentTarget as HTMLElement;
       const label = document.querySelector('.language-side.target .lang-name') as HTMLElement;
-      
+
       this.visualTargetLang = null; // Retire le style actif immédiatement
-      
+
       this.playPremiumAnimation(currentActive, targetBtn, label, LANGUAGES[lang].name, () => {
         this.visualTargetLang = lang; // Applique le style rouge uniquement quand le point atterrit
       });
@@ -109,13 +118,24 @@ export class TranslationHubComponent {
     } else {
       this.targetLang = lang;
       this.result = null;
+      if (this.text.trim()) {
+        this.translate();
+      }
     }
   }
 
   swapLanguages(): void {
     [this.sourceLang, this.targetLang] = [this.targetLang, this.sourceLang];
     [this.visualSourceLang, this.visualTargetLang] = [this.sourceLang, this.targetLang];
+
+    if (this.result?.translation) {
+      this.text = this.result.translation;
+    }
+
     this.result = null;
+    if (this.text.trim()) {
+      this.translate();
+    }
     // Manual DOM update for labels when swapping since we bypass AnimeJS here
     setTimeout(() => {
       const srcLabel = document.querySelector('.language-side.source .lang-name') as HTMLElement;
@@ -145,12 +165,12 @@ export class TranslationHubComponent {
       anime({
         targets: dot,
         left: endX,
-        top: [ { value: startY - 45 }, { value: endY } ],
-        scale: [ { value: 1 }, { value: 1.5 }, { value: 1 } ],
+        top: [{ value: startY - 45 }, { value: endY }],
+        scale: [{ value: 1 }, { value: 1.5 }, { value: 1 }],
         duration: 650,
         easing: "easeOutCubic",
-        complete() { 
-          dot.remove(); 
+        complete() {
+          dot.remove();
           onDotLanded();
         }
       });
@@ -161,7 +181,7 @@ export class TranslationHubComponent {
     if (targetBtn) {
       anime({
         targets: targetBtn,
-        scale: [ { value: 0.92 }, { value: 1.10 }, { value: 1 } ],
+        scale: [{ value: 0.92 }, { value: 1.10 }, { value: 1 }],
         duration: 450,
         easing: 'easeOutBack'
       });
@@ -187,18 +207,15 @@ export class TranslationHubComponent {
     }
   }
 
-  toggleInputMode(): void {
-    this.inputMode = this.inputMode === "text" ? "file" : "text";
-  }
-
   onTextChange(): void {
     clearTimeout(this.typingTimeout);
     this.typingTimeout = setTimeout(() => {
       this.translate();
-    }, 1200); // Live translation as requested
+    }, 1000); // Live translation with 1s debounce
   }
 
-  translate(overrideText?: string): void {
+  translate(overrideText?: string, autoPlayTTS: boolean = false): void {
+    clearTimeout(this.typingTimeout);
     const textToTranslate = overrideText ?? this.text;
     if (!textToTranslate.trim()) {
       this.result = null;
@@ -207,15 +224,22 @@ export class TranslationHubComponent {
       return;
     }
 
+    if (this.currentTranslationSub) {
+      this.currentTranslationSub.unsubscribe();
+    }
+
     const requestId = ++this.translationRequestId;
     this.isLoading = true;
     this.error = null;
 
-    this.translationService.translate(textToTranslate, this.sourceLang, this.targetLang).subscribe({
+    this.currentTranslationSub = this.translationService.translate(textToTranslate, this.sourceLang, this.targetLang).subscribe({
       next: (data) => {
         if (requestId !== this.translationRequestId) return;
         this.result = data;
         this.isLoading = false;
+        if (autoPlayTTS && this.targetLang !== "ee") {
+          setTimeout(() => this.playTTS(), 300);
+        }
       },
       error: (err) => {
         if (requestId !== this.translationRequestId) return;
@@ -245,58 +269,89 @@ export class TranslationHubComponent {
   }
 
   async startRecording(): Promise<void> {
-    this.audioChunks = [];
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) this.audioChunks.push(event.data);
-      };
-      this.mediaRecorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        this.processAudioForSTT(new Blob(this.audioChunks, { type: "audio/webm" }));
-      };
-      this.mediaRecorder.start();
-      this.beginTimer();
-    } catch {
+    this.error = null;
+    this.baseText = this.text.trim();
+    
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      this.error = "La reconnaissance vocale n'est pas supportée par ce navigateur.";
+      // Fallback
       this.beginTimer();
       setTimeout(() => {
         this.stopTimer();
         const sample = this.sourceLang === "fr" ? "Bonjour, bienvenue au marché de Lomé." : this.sourceLang === "en" ? "I want to buy fish and yams." : "Woezɔ̃ yi Togo, akpe kakaka !";
         this.text = sample;
-        this.translate(sample);
+        this.translate(sample, true);
       }, 3000);
+      return;
+    }
+
+    if (!this.recognition) {
+      this.recognition = new SpeechRecognition();
+      this.recognition.continuous = true;
+      this.recognition.interimResults = true;
+
+      this.recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        if (finalTranscript) {
+          this.baseText += (this.baseText ? ' ' : '') + finalTranscript.trim();
+        }
+
+        const displayText = this.baseText + (interimTranscript ? (this.baseText ? ' ' : '') + interimTranscript.trim() + ' ...' : '');
+        this.text = displayText;
+      };
+
+      this.recognition.onerror = (event: any) => {
+        if (event.error !== 'no-speech') {
+          this.error = "Erreur vocale: " + event.error;
+        }
+        this.stopRecording();
+      };
+
+      this.recognition.onend = () => {
+        this.isRecording = false;
+        this.text = this.baseText; // On s'assure d'avoir la version propre finale
+        this.stopTimer();
+        if (this.text.trim()) {
+          this.translate(this.text, true);
+        }
+      };
+    }
+
+    let lang = 'fr-FR';
+    if (this.sourceLang === 'en') lang = 'en-US';
+    else if (this.sourceLang === 'ee') lang = 'ee-TG';
+
+    this.recognition.lang = lang;
+    this.text = this.baseText; // On démarre avec le texte de base
+    
+    try {
+      this.recognition.start();
+      this.isRecording = true;
+      this.beginTimer();
+    } catch (e) {
+      this.error = "Impossible de démarrer la reconnaissance vocale.";
+      this.isRecording = false;
     }
   }
 
   stopRecording(): void {
-    if (this.mediaRecorder && this.isRecording) this.mediaRecorder.stop();
+    if (this.recognition && this.isRecording) {
+      this.recognition.stop();
+    }
+    this.isRecording = false;
     this.stopTimer();
-  }
-
-  processAudioForSTT(audioBlob: Blob): void {
-    this.isLoading = true;
-    this.error = null;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64Data = String(reader.result).split(",")[1] ?? "";
-      this.http.post<{ text: string }>("/api/stt", { audioData: base64Data, mimeType: "audio/webm", targetLang: this.sourceLang }).subscribe({
-        next: (data) => {
-          if (!data.text) {
-            this.error = "Aucun texte capté. Parlez bien en face du micro.";
-            this.isLoading = false;
-            return;
-          }
-          this.text = data.text;
-          this.translate(data.text);
-        },
-        error: (err) => {
-          this.error = err?.error?.error || "Erreur de connexion lors de la reconnaissance vocale.";
-          this.isLoading = false;
-        },
-      });
-    };
-    reader.readAsDataURL(audioBlob);
   }
 
   playTTS(): void {

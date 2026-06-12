@@ -84,13 +84,29 @@ export class DotRevealComponent implements OnChanges, OnDestroy {
     
     this.outputRef.nativeElement.innerHTML = "";
     
-    const chars = text.substring(0, 150).split("");
-    if (text.length > 150) {
-      chars.push('.', '.', '.');
-    }
+    const chars = text.split("");
+    const baseDelay = chars.length > 100 ? 15 : 40;
 
     chars.forEach((char, i) => {
-      this.createDotChar(char, i * 40); 
+      if (i < 100) {
+        this.createDotChar(char, i * baseDelay);
+      } else {
+        const wrapper = document.createElement("span");
+        wrapper.style.opacity = "0";
+        wrapper.style.transition = "opacity 0.2s ease-in";
+        if (char === ' ') {
+          wrapper.style.display = 'inline-block';
+          wrapper.style.width = '8px';
+        } else {
+          wrapper.innerHTML = char;
+        }
+        this.outputRef.nativeElement.appendChild(wrapper);
+
+        this.timeouts.push(setTimeout(() => {
+          wrapper.style.opacity = "1";
+          if (char !== ' ') wrapper.className = "char-revealed";
+        }, i * baseDelay + 150));
+      }
     });
   }
 }

@@ -4,19 +4,22 @@
       <div class="language-side source">
         <div class="lang-name">{{ languages[sourceLang].name }}</div>
         <div class="lang-buttons">
-          <button *ngFor="let l of langKeys" class="lang-btn" [class.active]="visualSourceLang === l" (click)="setSourceLang(l, $event)">
+          <button *ngFor="let l of langKeys" class="lang-btn" [class.active]="visualSourceLang === l"
+            (click)="setSourceLang(l, $event)">
             {{ l | uppercase }}
           </button>
         </div>
       </div>
 
-      <div class="switch" (click)="swapLanguages()" style="cursor: pointer; color: var(--primary); transition: 0.2s;" matTooltip="Inverser les langues">
+      <div class="switch" (click)="swapLanguages()" style="cursor: pointer; color: var(--primary); transition: 0.2s;"
+        matTooltip="Inverser les langues">
         ⇄
       </div>
 
       <div class="language-side target">
         <div class="lang-buttons">
-          <button *ngFor="let l of langKeys" class="lang-btn" [class.active]="visualTargetLang === l" (click)="setTargetLang(l, $event)">
+          <button *ngFor="let l of langKeys" class="lang-btn" [class.active]="visualTargetLang === l"
+            (click)="setTargetLang(l, $event)">
             {{ l | uppercase }}
           </button>
         </div>
@@ -26,25 +29,21 @@
 
     <div class="text-panels">
       <div class="text-panel-left">
-        <textarea *ngIf="inputMode === 'text'" class="source-textarea" [placeholder]="'Saisissez du texte en ' + languages[sourceLang].name + '...'" [(ngModel)]="text" (ngModelChange)="onTextChange()" maxlength="1200"></textarea>
-        
-        <div *ngIf="inputMode === 'file'" class="file-dropzone" (click)="toggleInputMode()">
-          <mat-icon>upload_file</mat-icon>
-          <span>Déposez un fichier ici (PDF, DOCX, TXT)</span>
-          <span style="font-size: 11px; opacity: 0.7;">Cliquez pour revenir au mode texte</span>
-        </div>
+        <textarea class="source-textarea"
+          [placeholder]="'Saisissez du texte en ' + languages[sourceLang].name + '...'" [(ngModel)]="text"
+          (ngModelChange)="onTextChange()" maxlength="1200"></textarea>
         <div class="text-panel-footer">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <button mat-icon-button (click)="toggleRecording()" [color]="isRecording ? 'warn' : 'primary'" [matTooltip]="isRecording ? 'Arrêter l\'écoute' : 'Reconnaissance Vocale'" style="background: var(--surface2);">
+            <button mat-icon-button (click)="toggleRecording()" [color]="isRecording ? 'warn' : 'primary'"
+              [matTooltip]="sourceLang === 'ee' ? 'Reconnaissance vocale non disponible pour l\'Ewe' : (isRecording ? 'Arrêter l\'écoute' : 'Reconnaissance Vocale')"
+              style="background: var(--surface2);" [disabled]="sourceLang === 'ee'">
               <mat-icon>{{ isRecording ? 'mic_off' : 'mic' }}</mat-icon>
             </button>
-            <span style="font-size: 12px; font-weight: 600; color: var(--primary);">{{ isRecording ? 'Écoute en cours ' + recordingSeconds + 's' : '' }}</span>
+            <span style="font-size: 12px; font-weight: 600; color: var(--primary);">{{ isRecording ? 'Écoute en cours '
+              + recordingSeconds + 's' : '' }}</span>
           </div>
           <div style="display: flex; align-items: center; gap: 16px;">
             <span class="char-count">{{ text.length }}/1200 chars</span>
-            <button mat-mini-fab color="primary" (click)="toggleInputMode()" matTooltip="Basculer vers l'import de fichier">
-              <mat-icon>{{ inputMode === 'text' ? 'upload_file' : 'keyboard' }}</mat-icon>
-            </button>
           </div>
         </div>
       </div>
@@ -56,40 +55,36 @@
         </div>
 
         <div *ngIf="!isLoading && result" class="result-content">
-          <div>
+          <div class="result-text-container">
             <app-dot-reveal [text]="result.translation"></app-dot-reveal>
             <div *ngIf="result.phonetics" class="result-phonetics">[{{ result.phonetics }}]</div>
           </div>
           <div class="result-footer" style="display: flex; gap: 8px;">
-            <button mat-icon-button color="primary" (click)="playTTS()" [disabled]="isPlayingAudio" matTooltip="Synthèse Vocale (TTS)">
+            <button mat-icon-button color="primary" (click)="playTTS()" [disabled]="isPlayingAudio || targetLang === 'ee'"
+              matTooltip="Synthèse Vocale (TTS)">
               <mat-icon [class.animate-bounce]="isPlayingAudio">volume_up</mat-icon>
             </button>
-            <button mat-flat-button color="primary" (click)="saveToHistory()" matTooltip="Enregistrer dans l'historique">
+            <button mat-flat-button color="primary" (click)="saveToHistory()"
+              matTooltip="Enregistrer dans l'historique">
               <mat-icon>history</mat-icon>
               Sauvegarder
             </button>
           </div>
         </div>
 
-        <div *ngIf="!isLoading && !result" class="result-empty">
+        <div *ngIf="!isLoading && !result && !error" class="result-empty">
           <mat-icon style="font-size: 36px; width: 36px; height: 36px; color: var(--border);">translate</mat-icon>
           <p>La traduction automatique de vos phrases apparaîtra ici.</p>
         </div>
+
+        <div *ngIf="!isLoading && !result && error" class="result-empty" style="color: var(--warn);">
+          <mat-icon style="font-size: 36px; width: 36px; height: 36px;">error_outline</mat-icon>
+          <p style="margin-top: 12px; font-weight: 500;">{{ error }}</p>
+        </div>
       </div>
     </div>
-
-    <div class="action-bar">
-      <div class="samples">
-        <span class="samples-label">Phrases typiques :</span>
-        <button class="sample-chip" (click)="loadSample('Comment vas-tu mon ami ?', 'fr', 'ee')">Salut Ami</button>
-        <button class="sample-chip" (click)="loadMarketSample()">Prix Marché</button>
-        <button class="sample-chip" (click)="loadSample('Welcome to our Togo school.', 'en', 'ee')">School (EN)</button>
-      </div>
+    <div *ngIf="error" class="error-banner fade-in">
+      <mat-icon>error_outline</mat-icon>
+      <div>{{ error }}</div>
     </div>
   </div>
-
-  <div *ngIf="error" class="error-banner fade-in">
-    <mat-icon>error_outline</mat-icon>
-    <div>{{ error }}</div>
-  </div>
-</div>
